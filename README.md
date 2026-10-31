@@ -47,8 +47,9 @@
 ## 插件来源与版本策略
 
 - **包装仓库按最新拉取**：lede 源码、所有外部插件包装仓库均按 main/master 最新拉取（每次构建全新 clone），lucky / passwall 全家桶 / OpenClash / iStore / argon 等全部官方源。注意：包装仓库最新 ≠ 应用本体最新，本体版本由包装仓库 Makefile 的 `PKG_VERSION` 写死（见下条）。
-- **构建时自动追新（本仓库处理）**：`Scripts/packages.sh` 文末 `bump_latest` 在构建时查询上游 GitHub 最新 Release，自动升级 `PKG_VERSION`（hash 置 skip），覆盖 **lucky、ddns-go、xray-core、sing-box、OpenList**；查询失败/限流时自动回退包装仓库原版本，不会让构建失败。hysteria（tag 格式特殊）、chinadns-ng 等多 hash 包、dockerd（多组件版本联动）不在此列，仍以包装仓库/feed 维护者更新为准。
-- **feed 插件的版本边界**：OpenList 以外的 feed 插件（Samba4、TTYD、mwan3、statistics、TurboACC、dockerd 等）来自 lede feeds，其中 luci feed 固定 `openwrt-25.12` 分支（lede 官方搭配，不能单改 master，否则与 lede 主线不匹配），版本随 lede 更新，不是上游最新。
+- **构建时自动追新（本仓库处理）**：`Scripts/packages.sh` 文末的追新函数组在构建时查询上游 GitHub 最新 Release 自动升级版本（hash 置 skip，查询失败自动回退原版本、绝不因此让构建失败），覆盖：lucky、ddns-go、xray-core、sing-box、hysteria、chinadns-ng、shadowsocks-rust、shadow-tls、geoview、v2ray-plugin、xray-plugin、microsocks、ipt2socks、v2ray-geodata（geoip/geosite 数据）、naiveproxy、smartdns、linkease 本体、OpenList（含前端版本同步），以及 **Docker 全家桶联动升级**（dockerd/docker/containerd/runc/tini 按 moby 源码 Dockerfile 的 vendored 版本整组升，含两个包的短 commit 同步——dockerd 构建自检要求五者严格一致，缺一项整组不升）。
+- **已核实无需追新**：dns2socks、shadowsocksr-libev（源码内嵌包装仓库、上游已停更，现版即最终版）、tcping、simple-obfs（git 包，所钉 commit 经核对就是上游 master HEAD，上游已归档）。
+- **feed 插件的版本边界**：luci feed 固定 `openwrt-25.12` 分支是 lede 官方搭配（coolsnowwolf/luci 的 master 为陈旧遗留分支，25.12 已是其最新分支），不能单改；Samba4、TTYD、mwan3、statistics、TurboACC、watchcat 等的上游就是 OpenWrt/lede 本身，只能随 lede 更新，单独升版会与系统库冲突，不做。磁盘管理 Diskman 已改为 lisaac 官方源直拉（与 feed 版脱钩）。
 - **官方源替换 feed 旧版**：`Scripts/packages.sh` 按「包名目录」提取多包仓库子目录（lucky、passwall、passwall-packages、OpenClash、ddns-go），并在 `core.yml` 与 `packages.sh` 移除 lede feed 同名旧版（passwall / lucky / OpenClash / dockerman / ddns-go / wechatpush / argon 等），避免同名冲突与版本回退。
 - **已移除**：Alist（luci-app-alist）、lede 自带 Docker CE 界面（改用 Dockerman 顶级菜单）、helloworld feed（与 passwall-packages 同名冲突）
 

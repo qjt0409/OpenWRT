@@ -188,6 +188,15 @@ clone_pkg luci-lib-docker-src lisaac/luci-lib-docker master
 extract_dir "$PACKAGE_DIR/luci-lib-docker-src/collections/luci-lib-docker" luci-lib-docker
 rm -rf "$PACKAGE_DIR/luci-lib-docker-src"
 
+# ---------- 磁盘管理 Diskman（lisaac 官方源，原走 lede luci feed 旧版） ----------
+# 与 dockerman 同为 lisaac 仓库群：根无 Makefile，提取 applications/luci-app-diskman；
+# 依赖 parted/e2fsprogs/smartmontools/blkid 均由 lede packages feed 提供，无需额外处理。
+rm -rf ./package/feeds/luci/applications/luci-app-diskman ./feeds/luci/applications/luci-app-diskman
+clone_pkg luci-app-diskman-src lisaac/luci-app-diskman master
+extract_dir "$PACKAGE_DIR/luci-app-diskman-src/applications/luci-app-diskman" luci-app-diskman
+rm -rf "$PACKAGE_DIR/luci-app-diskman-src"
+echo ">> 已用 lisaac 官方版 luci-app-diskman，并移除 lede feed 同名旧版"
+
 # ---------- 易有云 LinkEase（大仓库按需提取） ----------
 clone_pkg nas-packages linkease/nas-packages master
 for d in linkease linkease-common-bin; do
@@ -214,35 +223,58 @@ fi
 
 # ---------- 构建时自动追新（解决“包装仓库 PKG_VERSION 写死”问题） ----------
 # 背景：clone_pkg 拉的只是“包装仓库”的最新代码，应用本体版本由各包装仓库
-# Makefile 里的 PKG_VERSION 写死，并按该版本下载 tarball（如 lucky / ddns-go /
-# xray-core / sing-box）。上游发新版后，包装维护者不改 PKG_VERSION 就不会变新。
-# 处理：对结构简单、安全可升的包（源码 URL 形如 .../v$(PKG_VERSION)，单行
-# PKG_VERSION + 单个 PKG_HASH），在构建时查询上游 GitHub 最新 Release，
-# 自动把 PKG_VERSION 升到最新并将 PKG_HASH 置为 skip（lucky 本就是 skip）。
-# 原则：查询失败 / 限流 / tag 格式异常时保留包装仓库原版本、继续构建，
-# 追新失败绝不让整个构建失败（本脚本 set -e，故函数内全程防退出）。
-# 未纳入：hysteria（tag 为 app/v* 特殊格式）、chinadns-ng / shadowsocks-rust
-# （多架构多 hash）、v2ray-geodata（日期版 + 独立 Download 规则）、dockerd
-# （与 docker/containerd/runc 版本联动校验，单升会编译报错）——这些仍以
-# 包装仓库 / lede feed 维护者更新的版本为准。
+# Makefile 里的 PKG_VERSION 写死，并按该版本下载 tarball / 预编译二进制。
+# 上游发新版后，包装维护者不改版本就不会变新（lede feed 的包同理）。
+# 处理：构建时查询上游 GitHub 最新 Release，自动升版本并把 hash 置 skip
+# （lucky 上游本来就用 skip；hash 校验让位于版本自动跟随）。
+# 原则：查询失败 / 限流 / tag 格式异常 / 联动数据缺失时，一律保留原版本
+# 继续构建——追新失败绝不让构建失败（本脚本 set -e，函数全程防退出）。
+# 已核实无需追新的包（2026-11-01 逐个查过 Makefile 与上游）：
+#   dns2socks / shadowsocksr-libev：源码直接内嵌在包装仓库 src/ 里，构建不
+#     下载，且上游已停发新版（2.1 / 2.5.6 即最终版）；
+#   tcping / simple-obfs：git 包，其 PKG_SOURCE_VERSION 经 ls-remote 核对
+#     就是上游 master 的 HEAD，上游已归档，本就是最新；
+#   dockerd 之外的 feed 系统包（samba4/ttyd/mwan3 等）：上游就是 OpenWrt
+#     本身，只能随 lede 更新，单独升版与系统库必然冲突，不做。
+
+# 取某仓库最新 Release 的 tag；失败输出空
+latest_tag() {
+	local repo="$1" tag=""
+	if [ -n "${GITHUB_TOKEN:-}" ]; then
+		tag=$(curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" \
+			"https://api.github.com/repos/$repo/releases/latest" 2>/dev/null \
+			| sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -1 || true)
+	else
+		tag=$(curl -fsSL -H "Accept: application/vnd.github+json" \
+			"https://api.github.com/repos/$repo/releases/latest" 2>/dev/null \
+			| sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -1 || true)
+	fi
+	printf '%s' "$tag"
+}
+
+# 把文件里所有 64 位十六进制 hash（PKG_HASH / HASH / PKG_MIRROR_HASH）置 skip
+skip_hashes() {
+	sed -i -E 's/^([[:space:]]*(PKG_HASH|HASH|PKG_MIRROR_HASH):=)[0-9a-f]{64}/\1skip/' "$1"
+}
+
+# 通用追新：bump_latest <Makefile> <上游仓库> [tag 前缀，默认 v]
+# 覆盖单 PKG_VERSION 型包（含多 hash 的 chinadns-ng、hysteria 的 app/v 前缀）。
+# 若 Makefile 带 FRONTEND_VERSION（OpenList），同步升到同一版本。
 bump_latest() {
-	local mk="$1" upstream="$2"
+	local mk="$1" upstream="$2" prefix="${3:-v}"
 	local tag="" ver="" old=""
 	if [ ! -f "$mk" ]; then
 		echo ">> 追新跳过（Makefile 不存在）: $mk"
 		return 0
 	fi
 	old=$(grep -m1 -oP '^PKG_VERSION:=\K.+' "$mk" 2>/dev/null || true)
-	if [ -n "${GITHUB_TOKEN:-}" ]; then
-		tag=$(curl -fsSL -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" \
-			"https://api.github.com/repos/$upstream/releases/latest" 2>/dev/null \
-			| sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -1 || true)
-	else
-		tag=$(curl -fsSL -H "Accept: application/vnd.github+json" \
-			"https://api.github.com/repos/$upstream/releases/latest" 2>/dev/null \
-			| sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -1 || true)
+	tag=$(latest_tag "$upstream")
+	ver="$tag"
+	if [ -n "$prefix" ] && [ "${ver#$prefix}" != "$ver" ]; then
+		ver="${ver#$prefix}"
+	elif [ "${ver#v}" != "$ver" ]; then
+		ver="${ver#v}"
 	fi
-	ver="${tag#v}"
 	if [ -z "$ver" ] || ! printf '%s' "$ver" | grep -qE '^[0-9][0-9A-Za-z._-]*$'; then
 		echo ">> 追新跳过（未取到有效最新版，保留 $old）: $upstream"
 		return 0
@@ -252,20 +284,196 @@ bump_latest() {
 		return 0
 	fi
 	sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=$ver/" "$mk"
-	# 版本已变，原 tarball 的固定 hash 必然不匹配，置 skip（与 lucky 上游做法一致）
-	if grep -q '^PKG_HASH:=' "$mk"; then
-		sed -i 's/^PKG_HASH:=.*/PKG_HASH:=skip/' "$mk"
+	skip_hashes "$mk"
+	if grep -q '^FRONTEND_VERSION:=' "$mk"; then
+		sed -i "s/^FRONTEND_VERSION:=.*/FRONTEND_VERSION:=$ver/" "$mk"
 	fi
 	echo ">> 已追新: $upstream $old -> $ver"
 	return 0
 }
 
+# v2ray-geodata：GEOIP_VER / GEOSITE_VER 本身就是上游 release 的时间戳 tag
+bump_geodata() {
+	local mk="$PACKAGE_DIR/v2ray-geodata/Makefile" pair="" var="" repo="" tag="" old="" changed=0
+	[ -f "$mk" ] || { echo ">> 追新跳过（geodata Makefile 不存在）"; return 0; }
+	for pair in "GEOIP_VER Loyalsoldier/geoip" "GEOSITE_VER Loyalsoldier/v2ray-rules-dat"; do
+		var="${pair%% *}"
+		repo="${pair##* }"
+		tag=$(latest_tag "$repo")
+		old=$(grep -m1 -oP "^${var}:=\\K.+" "$mk" 2>/dev/null || true)
+		if [ -z "$tag" ] || ! printf '%s' "$tag" | grep -qE '^[0-9]{12}$'; then
+			echo ">> 追新跳过（未取到有效最新版，保留 $old）: $repo"
+			continue
+		fi
+		if [ "$tag" = "$old" ]; then
+			echo ">> 已是最新: $repo $old"
+			continue
+		fi
+		sed -i "s/^${var}:=.*/${var}:=$tag/" "$mk"
+		changed=1
+		echo ">> 已追新: $repo $old -> $tag"
+	done
+	if [ "$changed" = "1" ]; then
+		skip_hashes "$mk"
+	fi
+	return 0
+}
+
+# naiveproxy：tag 形如 v154.0.8037.49-5，版本与 PKG_RELEASE 联动
+bump_naiveproxy() {
+	local mk="$PACKAGE_DIR/naiveproxy/Makefile" tag="" body="" rel="" old=""
+	[ -f "$mk" ] || { echo ">> 追新跳过（naiveproxy Makefile 不存在）"; return 0; }
+	old=$(grep -m1 -oP '^PKG_VERSION:=\K.+' "$mk" 2>/dev/null || true)
+	tag=$(latest_tag klzgrad/naiveproxy)
+	if ! printf '%s' "$tag" | grep -qE '^v[0-9.]+-[0-9]+$'; then
+		echo ">> 追新跳过（未取到有效最新版，保留 $old）: klzgrad/naiveproxy"
+		return 0
+	fi
+	body="${tag#v}"
+	rel="${body##*-}"
+	body="${body%-*}"
+	if [ "$body" = "$old" ]; then
+		echo ">> 已是最新: klzgrad/naiveproxy $old"
+		return 0
+	fi
+	sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=$body/" "$mk"
+	sed -i "s/^PKG_RELEASE:=.*/PKG_RELEASE:=$rel/" "$mk"
+	skip_hashes "$mk"
+	echo ">> 已追新: klzgrad/naiveproxy $old -> $body-$rel"
+	return 0
+}
+
+# smartdns：源码按 commit 打包，tag 形如 Release48.4，需把 tag 解析成 commit sha
+bump_smartdns() {
+	local mk="$PACKAGE_DIR/smartdns/Makefile" tag="" ver="" sha="" old=""
+	[ -f "$mk" ] || { echo ">> 追新跳过（smartdns Makefile 不存在）"; return 0; }
+	old=$(grep -m1 -oP '^PKG_VERSION:=\K.+' "$mk" 2>/dev/null || true)
+	tag=$(latest_tag pymumu/smartdns)
+	ver="${tag#Release}"
+	if [ -z "$ver" ] || ! printf '%s' "$ver" | grep -qE '^[0-9][0-9.]*$'; then
+		echo ">> 追新跳过（未取到有效最新版，保留 $old）: pymumu/smartdns"
+		return 0
+	fi
+	if [ "$ver" = "$old" ]; then
+		echo ">> 已是最新: pymumu/smartdns $old"
+		return 0
+	fi
+	sha=$(git ls-remote https://github.com/pymumu/smartdns.git "refs/tags/$tag" "refs/tags/$tag^{}" 2>/dev/null | tail -1 | cut -f1 || true)
+	if ! printf '%s' "$sha" | grep -qE '^[0-9a-f]{40}$'; then
+		echo ">> 追新跳过（未取到 tag 对应 commit，保留 $old）: pymumu/smartdns"
+		return 0
+	fi
+	sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=$ver/" "$mk"
+	sed -i "s/^PKG_SOURCE_VERSION:=.*/PKG_SOURCE_VERSION:=$sha/" "$mk"
+	skip_hashes "$mk"
+	echo ">> 已追新: pymumu/smartdns $old -> $ver"
+	return 0
+}
+
+# linkease / linkease-common-bin：版本写在 PKG_SOURCE_DATE，源码包来自
+# istoreos/istoreos-app-hub 的 linkease-runtime-v<版本> 系列 tag（该仓库混发
+# 多个应用，不能用 releases/latest，改用 ls-remote 按前缀取最大版本）
+bump_linkease() {
+	local ver="" f="" old=""
+	ver=$(git ls-remote --tags --refs https://github.com/istoreos/istoreos-app-hub.git 2>/dev/null \
+		| sed -n 's|.*refs/tags/linkease-runtime-v\([0-9][0-9.]*\)$|\1|p' | sort -Vu | tail -1 || true)
+	if [ -z "$ver" ]; then
+		echo ">> 追新跳过（未取到 linkease-runtime 最新版）"
+		return 0
+	fi
+	for f in "$PACKAGE_DIR/linkease/Makefile" "$PACKAGE_DIR/linkease-common-bin/Makefile"; do
+		[ -f "$f" ] || continue
+		old=$(grep -m1 -oP '^PKG_SOURCE_DATE:=\K.+' "$f" 2>/dev/null || true)
+		if [ "$ver" = "$old" ]; then
+			echo ">> 已是最新: linkease-runtime $old"
+			continue
+		fi
+		sed -i "s/^PKG_SOURCE_DATE:=.*/PKG_SOURCE_DATE:=$ver/" "$f"
+		skip_hashes "$f"
+		echo ">> 已追新: linkease-runtime $old -> $ver（${f##*/}）"
+	done
+	return 0
+}
+
+# Docker 全家桶联动追新（lede packages feed）：
+# dockerd 构建时会自检——docker(CLI) 版本必须与 dockerd 相同、containerd /
+# runc / tini 版本必须等于 moby 源码 Dockerfile 里 vendored 的版本、且两个
+# 包的 PKG_GIT_SHORT_COMMIT 必须等于对应 tag 的短 commit。任一项单独升都会
+# 被自检拦下报错，故整组一起升：先集齐全部数据并校验，缺任何一项整组不动。
+bump_docker_stack() {
+	local base="./feeds/packages/utils"
+	local dockerd_mk="$base/dockerd/Makefile" docker_mk="$base/docker/Makefile"
+	local containerd_mk="$base/containerd/Makefile" runc_mk="$base/runc/Makefile" tini_mk="$base/tini/Makefile"
+	local tag="" ver="" old="" dfile="" cver="" rver="" tver="" dshort="" clishort="" told="" tsha=""
+	[ -f "$dockerd_mk" ] || { echo ">> 追新跳过（dockerd Makefile 不存在）"; return 0; }
+	old=$(grep -m1 -oP '^PKG_VERSION:=\K.+' "$dockerd_mk" 2>/dev/null || true)
+	tag=$(latest_tag moby/moby)
+	ver="${tag#docker-v}"
+	if [ -z "$ver" ] || ! printf '%s' "$ver" | grep -qE '^[0-9][0-9.]*$'; then
+		echo ">> 追新跳过（未取到 moby 最新版，保留 $old）"
+		return 0
+	fi
+	if [ "$ver" = "$old" ]; then
+		echo ">> 已是最新: moby/moby $old"
+		return 0
+	fi
+	dfile=$(curl -fsSL "https://raw.githubusercontent.com/moby/moby/docker-v$ver/Dockerfile" 2>/dev/null || true)
+	cver=$(printf '%s' "$dfile" | grep -m1 -oP 'CONTAINERD_VERSION=v\K[0-9.]+' || true)
+	rver=$(printf '%s' "$dfile" | grep -m1 -oP 'RUNC_VERSION=v\K[0-9.]+' || true)
+	tver=$(printf '%s' "$dfile" | grep -m1 -oP 'TINI_VERSION=v\K[0-9.]+' || true)
+	dshort=$(git ls-remote https://github.com/moby/moby.git "refs/tags/docker-v$ver" "refs/tags/docker-v$ver^{}" 2>/dev/null | tail -1 | cut -f1 | cut -c1-7 || true)
+	clishort=$(git ls-remote https://github.com/docker/cli.git "refs/tags/v$ver" "refs/tags/v$ver^{}" 2>/dev/null | tail -1 | cut -f1 | cut -c1-7 || true)
+	told=$(grep -m1 -oP '^PKG_VERSION:=\K.+' "$tini_mk" 2>/dev/null || true)
+	if [ "$tver" != "$told" ]; then
+		tsha=$(git ls-remote https://github.com/krallin/tini.git "refs/tags/v$tver" "refs/tags/v$tver^{}" 2>/dev/null | tail -1 | cut -f1 || true)
+	fi
+	if [ -z "$cver" ] || [ -z "$rver" ] || [ -z "$tver" ] \
+		|| ! printf '%s' "$dshort" | grep -qE '^[0-9a-f]{7}$' \
+		|| ! printf '%s' "$clishort" | grep -qE '^[0-9a-f]{7}$' \
+		|| { [ "$tver" != "$told" ] && ! printf '%s' "$tsha" | grep -qE '^[0-9a-f]{40}$'; }; then
+		echo ">> 追新跳过（联动数据不齐：containerd=$cver runc=$rver tini=$tver，整组保留 $old）"
+		return 0
+	fi
+	sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=$ver/" "$dockerd_mk"
+	sed -i "s/^PKG_GIT_SHORT_COMMIT:=.*/PKG_GIT_SHORT_COMMIT:=$dshort/" "$dockerd_mk"
+	skip_hashes "$dockerd_mk"
+	sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=$ver/" "$docker_mk"
+	sed -i "s/^PKG_GIT_SHORT_COMMIT:=.*/PKG_GIT_SHORT_COMMIT:=$clishort/" "$docker_mk"
+	skip_hashes "$docker_mk"
+	sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=$cver/" "$containerd_mk"
+	skip_hashes "$containerd_mk"
+	sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=$rver/" "$runc_mk"
+	skip_hashes "$runc_mk"
+	if [ "$tver" != "$told" ]; then
+		sed -i "s/^PKG_VERSION:=.*/PKG_VERSION:=$tver/" "$tini_mk"
+		sed -i "s/^PKG_SOURCE_VERSION:=.*/PKG_SOURCE_VERSION:=$tsha/" "$tini_mk"
+		skip_hashes "$tini_mk"
+	fi
+	echo ">> 已追新: Docker 全家桶 dockerd/docker $old -> $ver（containerd $cver / runc $rver / tini $tver）"
+	return 0
+}
+
+# ---------- 追新执行 ----------
 bump_latest "$PACKAGE_DIR/lucky/Makefile" gdy666/lucky
 bump_latest "$PACKAGE_DIR/ddns-go/Makefile" jeessy2/ddns-go
 bump_latest "$PACKAGE_DIR/xray-core/Makefile" XTLS/Xray-core
 bump_latest "$PACKAGE_DIR/sing-box/Makefile" SagerNet/sing-box
-# OpenList 本体走 lede packages feed（feed 写死 4.2.7，上游已更新），直接对 feed 的 Makefile 追新
+bump_latest "$PACKAGE_DIR/hysteria/Makefile" apernet/hysteria "app/v"
+bump_latest "$PACKAGE_DIR/chinadns-ng/Makefile" zfl9/chinadns-ng ""
+bump_latest "$PACKAGE_DIR/shadowsocks-rust/Makefile" shadowsocks/shadowsocks-rust
+bump_latest "$PACKAGE_DIR/shadow-tls/Makefile" ihciah/shadow-tls
+bump_latest "$PACKAGE_DIR/geoview/Makefile" snowie2000/geoview ""
+bump_latest "$PACKAGE_DIR/v2ray-plugin/Makefile" teddysun/v2ray-plugin
+bump_latest "$PACKAGE_DIR/xray-plugin/Makefile" teddysun/xray-plugin
+bump_latest "$PACKAGE_DIR/microsocks/Makefile" rofl0r/microsocks
+bump_latest "$PACKAGE_DIR/ipt2socks/Makefile" zfl9/ipt2socks
+bump_geodata
+bump_naiveproxy
+bump_smartdns
+bump_linkease
+# OpenList 本体走 lede packages feed，直接对 feed 的 Makefile 追新（FRONTEND_VERSION 由 bump_latest 同步）
 bump_latest "./feeds/packages/net/openlist/Makefile" OpenListTeam/OpenList
+bump_docker_stack
 
 echo "=================================================="
 echo ">> 全部插件源码安装完成"
