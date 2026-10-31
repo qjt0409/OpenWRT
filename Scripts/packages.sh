@@ -102,10 +102,12 @@ echo ">> 已用 OpenClash 官方最新版，并移除 lede feed 自带旧版"
 # ---------- Argon 主题与主题设置 ----------
 clone_pkg luci-theme-argon jerrykuku/luci-theme-argon master
 clone_pkg luci-app-argon-config jerrykuku/luci-app-argon-config master
-# 移除 lede feed 同名旧版，避免同名包重复定义（与 lucky/passwall 同一处理原则；
-# feed 中不存在对应目录时 rm -rf 无副作用）
-rm -rf ./package/feeds/luci/themes/luci-theme-argon ./feeds/luci/themes/luci-theme-argon
-rm -rf ./package/feeds/luci/applications/luci-app-argon-config ./feeds/luci/applications/luci-app-argon-config
+# 注意：这两个包【不要】删 lede feed 同名版（经 2026-10-15 发布固件的 rootfs 实测）：
+# jerrykuku 的 luci-app-argon-config 仓库没有 po 目录，其简体中文目录
+# argon-config.zh-cn.lmo 来自 feed 版定义的 luci-i18n-argon-config-zh-cn 包；
+# 应用本体由构建系统的 OVERRIDE 机制自动用克隆版覆盖 feed 版（发布 .config 的
+# CONFIG_OVERRIDE_PKGS 已含 luci-app-argon-config / luci-theme-argon）。
+# 此前一版曾加过删除 feed 的两行，会导致主题设置页失去中文，已撤销。
 
 # ---------- 消息推送 ----------
 # 全能推送
@@ -169,6 +171,16 @@ msgstr ""
 msgid "istore_vue_lang"
 msgstr "zh-cn"
 PO
+# 修复 iStore 本体中文目录缺失（实测发布固件里只有 iStore.zh-tw.lmo、无 zh-cn）：
+# luci-app-store 的正式翻译在 src/po/zh-cn/iStore.po，但其 src/Makefile 的
+# 安装循环直接用语言代码当目录名（zh_Hans），不走 luci.mk 的 zh-cn 别名映射，
+# 导致简体目录永远生成不了。把该 po 复制一份到根 po/zh-cn/，让标准
+# luci-i18n-store-zh-cn 包按 luci.mk 规则生成正确的 iStore.zh-cn.lmo。
+if [ -f "$PACKAGE_DIR/luci-app-store/src/po/zh-cn/iStore.po" ]; then
+	cp "$PACKAGE_DIR/luci-app-store/src/po/zh-cn/iStore.po" \
+		"$PACKAGE_DIR/luci-app-store/po/zh-cn/iStore.po"
+	echo ">> 已补入 iStore.po 到根 po/zh-cn（生成 iStore.zh-cn.lmo）"
+fi
 rm -rf "$PACKAGE_DIR/istore-src"
 
 # ---------- 容器：Dockerman 中文前端 + Docker Engine API 库（参照 qjt0409/openwrt 方案） ----------
