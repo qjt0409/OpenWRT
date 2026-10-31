@@ -46,8 +46,10 @@
 
 ## 插件来源与版本策略
 
-- **自动最新**：lede 源码、全部 feeds、所有外部插件均按 main/master 最新拉取（每次构建全新 clone），lucky / passwall 全家桶 / OpenClash / iStore / argon 等全部官方源
-- **官方源替换 feed 旧版**：`Scripts/packages.sh` 按「包名目录」提取多包仓库子目录（lucky、passwall、passwall-packages、OpenClash），并在 `core.yml` 移除 lede feed 同名旧版，避免同名冲突与版本回退
+- **包装仓库按最新拉取**：lede 源码、所有外部插件包装仓库均按 main/master 最新拉取（每次构建全新 clone），lucky / passwall 全家桶 / OpenClash / iStore / argon 等全部官方源。注意：包装仓库最新 ≠ 应用本体最新，本体版本由包装仓库 Makefile 的 `PKG_VERSION` 写死（见下条）。
+- **构建时自动追新（本仓库处理）**：`Scripts/packages.sh` 文末 `bump_latest` 在构建时查询上游 GitHub 最新 Release，自动升级 `PKG_VERSION`（hash 置 skip），覆盖 **lucky、ddns-go、xray-core、sing-box、OpenList**；查询失败/限流时自动回退包装仓库原版本，不会让构建失败。hysteria（tag 格式特殊）、chinadns-ng 等多 hash 包、dockerd（多组件版本联动）不在此列，仍以包装仓库/feed 维护者更新为准。
+- **feed 插件的版本边界**：OpenList 以外的 feed 插件（Samba4、TTYD、mwan3、statistics、TurboACC、dockerd 等）来自 lede feeds，其中 luci feed 固定 `openwrt-25.12` 分支（lede 官方搭配，不能单改 master，否则与 lede 主线不匹配），版本随 lede 更新，不是上游最新。
+- **官方源替换 feed 旧版**：`Scripts/packages.sh` 按「包名目录」提取多包仓库子目录（lucky、passwall、passwall-packages、OpenClash、ddns-go），并在 `core.yml` 与 `packages.sh` 移除 lede feed 同名旧版（passwall / lucky / OpenClash / dockerman / ddns-go / wechatpush / argon 等），避免同名冲突与版本回退。
 - **已移除**：Alist（luci-app-alist）、lede 自带 Docker CE 界面（改用 Dockerman 顶级菜单）、helloworld feed（与 passwall-packages 同名冲突）
 
 ## 使用方法
