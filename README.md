@@ -41,13 +41,13 @@
 ## OpenClash 说明
 
 - 来源：vernesong/OpenClash 官方 master（每次构建自动拉最新）
-- 依赖已内置：dnsmasq-full（2.92）、bash、curl、ca-bundle、ip-full、ruby、ruby-yaml、kmod-tun、unzip
+- 依赖已内置：dnsmasq-full（lede 自带，当前 2.93）、bash、curl、ca-bundle、ip-full、ruby、ruby-yaml、kmod-tun、unzip
 - **clash / clash-meta 内核不在固件内**：首次使用进「OpenClash → 配置运行 → 内核下载」获取（若下载失败，可先配置好 PassWall 代理后再下载，或手动上传内核文件到 `/etc/openclash/core/`）
 
 ## 插件来源与版本策略
 
 - **包装仓库按最新拉取**：lede 源码、所有外部插件包装仓库均按 main/master 最新拉取（每次构建全新 clone），lucky / passwall 全家桶 / OpenClash / iStore / argon 等全部官方源。注意：包装仓库最新 ≠ 应用本体最新，本体版本由包装仓库 Makefile 的 `PKG_VERSION` 写死（见下条）。
-- **构建时自动追新（本仓库处理）**：`Scripts/packages.sh` 文末的追新函数组在构建时查询上游 GitHub 最新 Release 自动升级版本（hash 置 skip，查询失败自动回退原版本、绝不因此让构建失败），覆盖：lucky、ddns-go、xray-core、sing-box、hysteria、chinadns-ng、shadowsocks-rust、shadow-tls、geoview、v2ray-plugin、xray-plugin、microsocks、ipt2socks、v2ray-geodata（geoip/geosite 数据）、naiveproxy、smartdns、linkease 本体、OpenList（含前端版本同步），以及 **Docker 全家桶联动升级**（dockerd/docker/containerd/runc/tini 按 moby 源码 Dockerfile 的 vendored 版本整组升，含两个包的短 commit 同步——dockerd 构建自检要求五者严格一致，缺一项整组不升）。
+- **构建时自动追新（本仓库处理）**：`Scripts/packages.sh` 文末的追新函数组在构建时查询上游 GitHub 最新 Release 自动升级版本（hash 置 skip，查询失败自动回退原版本、绝不因此让构建失败），覆盖：lucky、ddns-go、xray-core、sing-box、hysteria、chinadns-ng、shadowsocks-rust、shadow-tls、geoview、v2ray-plugin、xray-plugin、microsocks、ipt2socks、v2ray-geodata（geoip/geosite 数据）、naiveproxy、smartdns、linkease 本体、OpenList（含前端版本同步）。**Docker 全家桶联动升级**（dockerd/docker/containerd/runc/tini 整组升）自 2026-11-01 起停用：containerd 2.4.2 在本构建环境编译失败（go:embed 资源文件缺失），Docker 暂随 feed 版本 29.6.1；联动函数保留在脚本中，待适配后重新启用（删除调用行前的注释即可）。
 - **已核实无需追新**：dns2socks、shadowsocksr-libev（源码内嵌包装仓库、上游已停更，现版即最终版）、tcping、simple-obfs（git 包，所钉 commit 经核对就是上游 master HEAD，上游已归档）。
 - **feed 插件的版本边界**：luci feed 固定 `openwrt-25.12` 分支是 lede 官方搭配（coolsnowwolf/luci 的 master 为陈旧遗留分支，25.12 已是其最新分支），不能单改；Samba4、TTYD、mwan3、statistics、TurboACC、watchcat 等的上游就是 OpenWrt/lede 本身，只能随 lede 更新，单独升版会与系统库冲突，不做。磁盘管理 Diskman 已改为 lisaac 官方源直拉（与 feed 版脱钩）。
 - **官方源替换 feed 旧版**：`Scripts/packages.sh` 按「包名目录」提取多包仓库子目录（lucky、passwall、passwall-packages、OpenClash、ddns-go），并在 `core.yml` 与 `packages.sh` 移除 lede feed 同名旧版（passwall / lucky / OpenClash / dockerman / ddns-go / wechatpush / argon 等），避免同名冲突与版本回退。
@@ -80,7 +80,7 @@
 
 - **增删插件**：编辑 `Config/X86.txt`，按需增删 `CONFIG_PACKAGE_xxx=y` 行；修改后先跑一次 `test` 模式验证。
 - **插件源码**：`Scripts/packages.sh` 管理所有外部插件克隆与提取（多包仓库自动按子目录落地）。
-- **默认参数**：`Scripts/patches.sh`（BBR、dnsmasq 2.92、顶级菜单重排）、`Scripts/settings.sh`（配置合并 + 中文语言符号）。
+- **默认参数**：`Scripts/patches.sh`（BBR、dnsmasq 版本守护、顶级菜单重排）、`Scripts/settings.sh`（配置合并 + 中文语言符号）。
 - **更换源码**：修改 `build.yml` 中 `repo` / `branch` / `source` 三个参数。
 
 ## 注意事项
@@ -102,7 +102,7 @@ OpenWRT-CI-X86/
 │   └── X86.txt          # x86_64 目标配置片段（全部插件开关）
 ├── Scripts/
 │   ├── packages.sh      # 插件源码安装（官方源提取 + 移除 feed 同名旧版）
-│   ├── patches.sh       # 源码级补丁（BBR/dnsmasq 2.92/菜单重排）
+│   ├── patches.sh       # 源码级补丁（BBR/dnsmasq 版本守护/菜单重排）
 │   └── settings.sh      # 编译配置生成
 ├── Files/etc/uci-defaults/
 │   ├── 99-zh-lang       # 首次启动设置中文

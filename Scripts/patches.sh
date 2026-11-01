@@ -62,11 +62,19 @@ if [ -n "$SYSJS" ]; then
 fi
 
 # ---------- 6. 升级 dnsmasq 到 2.92（PassWall 要求 >=2.92） ----------
+# 仅当 lede 仍为 2.91 时才需要手动升。lede 自 2026-10-15 起自带 2.93：
+# 此时版本 sed 不再匹配、只剩哈希 sed 生效，会把 2.93 的 Makefile 盖上
+# 2.92 的哈希，造成下载校验永久不匹配（2026-10-18 起连环构建失败的根因）。
+# 因此两个 sed 必须绑在同一个版本判断里，要么一起执行，要么都不动。
 DNSMASQ_MAKE="./package/network/services/dnsmasq/Makefile"
 if [ -f "$DNSMASQ_MAKE" ]; then
-	sed -i 's/PKG_UPSTREAM_VERSION:=2.91/PKG_UPSTREAM_VERSION:=2.92/' "$DNSMASQ_MAKE"
-	sed -i 's|PKG_HASH:=.*|PKG_HASH:=4bf50c2c1018f9fbc26037df51b90ecea0cb73d46162846763b92df0d6c3a458|' "$DNSMASQ_MAKE"
-	echo ">> dnsmasq 已升级到 2.92"
+	if grep -q 'PKG_UPSTREAM_VERSION:=2.91' "$DNSMASQ_MAKE"; then
+		sed -i 's/PKG_UPSTREAM_VERSION:=2.91/PKG_UPSTREAM_VERSION:=2.92/' "$DNSMASQ_MAKE"
+		sed -i 's|PKG_HASH:=.*|PKG_HASH:=4bf50c2c1018f9fbc26037df51b90ecea0cb73d46162846763b92df0d6c3a458|' "$DNSMASQ_MAKE"
+		echo ">> dnsmasq 已升级到 2.92"
+	else
+		echo ">> lede 自带 dnsmasq 已 >=2.92，跳过手动升级"
+	fi
 else
 	echo "!! 未找到 dnsmasq Makefile，跳过"
 fi

@@ -485,7 +485,11 @@ bump_smartdns
 bump_linkease
 # OpenList 本体走 lede packages feed，直接对 feed 的 Makefile 追新（FRONTEND_VERSION 由 bump_latest 同步）
 bump_latest "./feeds/packages/net/openlist/Makefile" OpenListTeam/OpenList
-bump_docker_stack
+# Docker 全家桶联动追新暂时停用（2026-11-01）：验证构建 run 41226023294 中
+# containerd 升到 2.4.2 后编译失败（go:embed 资源文件缺失：
+# pattern autocomplete / markdown.md.gotmpl: no matching files found），
+# 故 Docker 暂随 feed 版本（29.6.1 全家桶）。函数保留，待适配后再启用。
+# bump_docker_stack
 
 echo "=================================================="
 echo ">> 全部插件源码安装完成"
