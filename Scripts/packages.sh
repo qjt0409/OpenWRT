@@ -133,6 +133,16 @@ rm -rf "$PACKAGE_DIR/luci-app-ddns-go-src"
 rm -rf ./package/feeds/luci/applications/luci-app-ddns-go ./feeds/luci/applications/luci-app-ddns-go
 rm -rf ./package/feeds/packages/net/ddns-go ./feeds/packages/net/ddns-go
 echo ">> 已用 sirpdboy 官方版 ddns-go（子目录提取），并移除 lede feed 同名旧版"
+# sirpdboy 核心包两处上游瑕疵，就地修正：
+# 1) 其 Makefile 把版本注入写成 GO_PKG_LDFLAGS_X:=main.Version（大写 V），而
+#    ddns-go 源码里变量是小写 main.version（默认 "DEV"），-X 注入落空，
+#    二进制版本恒为 DEV：界面显示 vDEV、检查更新也无从比对。feed 版为小写，改回。
+# 2) 自带默认配置 enabled '0'，但界面表单默认显示已启用，首次开机不点
+#    「保存并应用」服务永不启动（界面恒显示未运行）。默认改为启用；
+#    已保存过配置者升级时 conffiles 保留其配置，不受影响。
+sed -i 's/GO_PKG_LDFLAGS_X:=main\.Version=/GO_PKG_LDFLAGS_X:=main.version=/' "$PACKAGE_DIR/ddns-go/Makefile"
+sed -i "s/option enabled '0'/option enabled '1'/" "$PACKAGE_DIR/ddns-go/files/ddns-go.conf"
+echo ">> 已修正 ddns-go 版本注入（main.version）与默认启用"
 # lucky：官方 gdy666 仓库（程序 + 界面两个子包，均取 main 最新；
 # 程序本体版本构建时由文末 bump_latest 按 gdy666/lucky 最新 Release 自动追新）
 # 程序包 lucky/（装 /etc/init.d/lucky）
