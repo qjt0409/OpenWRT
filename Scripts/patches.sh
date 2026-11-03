@@ -2,7 +2,9 @@
 # SPDX-License-Identifier: MIT
 # OpenWRT-CI-X86 源码级补丁
 #
-# 1. x86 内核启用 BBR（lede 默认未开启，内核自带最新 BBR）
+# 1. x86 内核启用 BBR 并编入 fq 队列调度（lede 默认未开启 BBR、且 NET_SCH_FQ 未编，
+#    固件里只有出厂的 fq_codel；默认 qdisc 由 Files/etc/sysctl.d/13-tcp-fq.conf 设为 fq，
+#    与 12-tcp-bbr 的 sysctl 兜底同一路数，组成默认 BBR + fq）
 # 2. TurboACC 默认 TCP 拥塞算法改为 bbr
 # 3. 默认主题切换为 Argon
 # 4. 默认 LAN 地址 / 主机名
@@ -17,7 +19,11 @@ KCFG="./target/linux/x86/config-$KVER"
 if [ -n "$KVER" ] && [ -f "$KCFG" ]; then
 	sed -i '/^CONFIG_TCP_CONG_BBR/d; /^CONFIG_DEFAULT_TCP_CONG/d' "$KCFG"
 	printf 'CONFIG_TCP_CONG_BBR=y\nCONFIG_DEFAULT_TCP_CONG="bbr"\n' >> "$KCFG"
-	echo ">> 内核 $KVER: 已启用 TCP BBR 并设为默认拥塞算法"
+	# fq 队列调度同法编入内核（lede generic 为 "# CONFIG_NET_SCH_FQ is not set"，
+	# 目标配置后追加 =y 覆盖之，与 BBR 的编入方式一致、已实证可行）
+	sed -i '/^CONFIG_NET_SCH_FQ=/d; /^# CONFIG_NET_SCH_FQ is not set/d' "$KCFG"
+	printf 'CONFIG_NET_SCH_FQ=y\n' >> "$KCFG"
+	echo ">> 内核 $KVER: 已启用 TCP BBR 并设为默认拥塞算法，已编入 fq 队列调度"
 else
 	echo "!! 未找到 x86 内核配置（$KCFG），跳过 BBR 补丁"
 fi
