@@ -16,6 +16,26 @@ set -e
 PACKAGE_DIR="./package"
 mkdir -p "$PACKAGE_DIR"
 
+# ---------- 清除构建缓存恢复出的 host ruby ----------
+# 缓存（staging_dir/host*）会把上一轮装进 hostpkg 的 ruby 一并恢复。本轮 ruby [host]
+# 在全新 build_dir 里 configure 时会把这份缓存 ruby 选作 BASERUBY；若其状态异常
+# （如仓库改名后跨路径恢复），它加载不了自带标准库 optparse，构建必死在
+# .revision.time 步（2026-11-02 两轮构建同签名失败：
+# tool/file2lastrev.rb: cannot load such file -- optparse (LoadError)）。
+# 本地已验证：无现成 ruby 时 configure 回退 miniruby 自举、构建正常。
+# 故在编译前删掉缓存中的 ruby 本体与库，强制本轮重编一份干净的；
+# 本步在缓存恢复之后、编译开始之前运行，时机正好。
+rm -f ./staging_dir/hostpkg/bin/ruby ./staging_dir/hostpkg/bin/rake \
+      ./staging_dir/hostpkg/bin/gem ./staging_dir/hostpkg/bin/irb \
+      ./staging_dir/hostpkg/bin/erb ./staging_dir/hostpkg/bin/rdoc \
+      ./staging_dir/hostpkg/bin/ri ./staging_dir/hostpkg/bin/bundle \
+      ./staging_dir/hostpkg/bin/bundler ./staging_dir/hostpkg/bin/racc \
+      ./staging_dir/hostpkg/bin/rbs ./staging_dir/hostpkg/bin/rdbg
+rm -rf ./staging_dir/hostpkg/lib/ruby ./staging_dir/hostpkg/lib/libruby* \
+       ./staging_dir/hostpkg/include/ruby-* ./staging_dir/hostpkg/share/ri
+rm -f ./staging_dir/hostpkg/lib/pkgconfig/ruby*.pc
+echo ">> 已清除缓存中的 host ruby（避免 BASERUBY 加载 optparse 失败）"
+
 # 克隆完整仓库到 ./package/<name>，自动清理旧目录
 clone_pkg() {
 	local name="$1" repo="$2" branch="$3"
