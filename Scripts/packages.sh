@@ -161,6 +161,18 @@ echo ">> 已用 sirpdboy 官方版 ddns-go（子目录提取），并移除 lede
 #    「保存并应用」服务永不启动（界面恒显示未运行）。默认改为启用；
 #    已保存过配置者升级时 conffiles 保留其配置，不受影响。
 sed -i 's/GO_PKG_LDFLAGS_X:=main\.Version=/GO_PKG_LDFLAGS_X:=main.version=/' "$PACKAGE_DIR/ddns-go/Makefile"
+# 3) 同一 Makefile 还多了一行 GO_PKG_LDFLAGS:=$(GO_PKG_LDFLAGS_X)（feed 版没有）：
+#    golang-package.mk 拼的是「$(GO_PKG_LDFLAGS) + patsubst(-X, GO_PKG_LDFLAGS_X)」，
+#    结果变成 -ldflags "main.version=6.17.7 -X main.version=6.17.7"，带头的裸 token
+#    让链接器停在那里、后面的 -X 被丢弃——这就是只改大小写仍恒 DEV 的原因
+#    （26.11.02 / 26.11.03 固件二进制均实证无版本号）。整行删掉，与 feed 版一致；
+#    本地已按 golang-package.mk 公式模拟：删后 -ldflags 为干净的 "-X main.version=…"。
+sed -i '/^GO_PKG_LDFLAGS:=$(GO_PKG_LDFLAGS_X)$/d' "$PACKAGE_DIR/ddns-go/Makefile"
+# 4) 界面包「重置账户密码」按钮第一步要以 LuCI 会话执行 /usr/bin/ddns-go
+#    -resetPassword，但其 rpcd ACL 只给了 init.d 等几个路径的 exec、漏了本体，
+#    点了必报「没有权限」（2026-11-03 用户实机复现）。给 ACL 补上本体 exec；
+#    本地已验证补后 JSON 合法。
+sed -i 's#"/etc/init.d/ddns-go": \[ "exec" \],#&\n\t\t\t\t"/usr/bin/ddns-go": [ "exec" ],#' "$PACKAGE_DIR/luci-app-ddns-go/root/usr/share/rpcd/acl.d/luci-app-ddns-go.json"
 sed -i "s/option enabled '0'/option enabled '1'/" "$PACKAGE_DIR/ddns-go/files/ddns-go.conf"
 echo ">> 已修正 ddns-go 版本注入（main.version）与默认启用"
 # lucky：官方 gdy666 仓库（程序 + 界面两个子包，均取 main 最新；
