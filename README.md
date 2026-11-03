@@ -109,4 +109,3 @@ OpenWRT-CI-X86/
 │   └── 99-root-password # 首次启动设置 root 密码 password
 └── README.md
 ```
-
