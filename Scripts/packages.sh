@@ -373,6 +373,65 @@ bump_geodata() {
 	return 0
 }
 
+# v2ray-geodata 预下载：geoip.dat / geosite.dat 只在该包 Build/Prepare 里经
+# download.pl 现场下载（两个 Download 定义写在 Prepare 内部、未在顶层注册，
+# make download 步根本不取这两个文件），而 dl/ 不在工作流缓存内、每轮全新。
+# 一旦编译期 runner 到 GitHub Release 的连接假死，download.pl 的 curl 没有
+# 速度下限会无限等——2026-11-05 定时构建就这样无声卡满 6 小时、被 GitHub
+# 作业上限取消（run 41945159713）。故在源码安装阶段先按 Makefile 里的
+# 版本/哈希把两个文件下进 dl/（连接超时 + 速度下限 + 单次总时长上限 +
+# 重试）：prepare 时 download.pl 见文件在位且哈希对得上即跳过网络。
+# 与其余追新函数不同，本函数在彻底失败时是刻意 exit 1 的——让故障在
+# 开跑几分钟内显形，而不是无声吃满 6 小时；网络恢复后重跑即可。
+predownload_geodata() {
+	local mk="$PACKAGE_DIR/v2ray-geodata/Makefile" dl="./dl"
+	local spec="" var="" repo="" blk="" ver="" urlfile="" hash="" file="" tmp="" attempt="" ok=""
+	[ -f "$mk" ] || { echo ">> 预下载跳过（geodata Makefile 不存在）"; return 0; }
+	mkdir -p "$dl"
+	for spec in "GEOIP_VER Loyalsoldier/geoip geoip" "GEOSITE_VER Loyalsoldier/v2ray-rules-dat geosite"; do
+		var="${spec%% *}"
+		repo="$(printf '%s' "$spec" | cut -d' ' -f2)"
+		blk="${spec##* }"
+		ver=$(grep -m1 -oP "^${var}:=\K.+" "$mk" 2>/dev/null || true)
+		urlfile=$(sed -n "/^define Download\/${blk}\$/,/^endef/p" "$mk" | grep -m1 -oP 'URL_FILE:=\K[^ \t]+' 2>/dev/null || true)
+		hash=$(sed -n "/^define Download\/${blk}\$/,/^endef/p" "$mk" | grep -m1 -oP 'HASH:=\K[^ \t]+' 2>/dev/null || true)
+		if [ -z "$ver" ] || [ -z "$urlfile" ]; then
+			echo ">> 预下载跳过（${blk} 参数解析失败，保留编译期下载的原行为）"
+			continue
+		fi
+		file="${urlfile}.${ver}"
+		if [ -f "$dl/$file" ] && { [ -z "$hash" ] || [ "$hash" = "skip" ] || [ "$(sha256sum "$dl/$file" 2>/dev/null | cut -d' ' -f1)" = "$hash" ]; }; then
+			echo ">> 已预下载（dl 在位）: $file"
+			continue
+		fi
+		tmp="$dl/.${file}.tmp"
+		ok=""
+		for attempt in 1 2 3; do
+			rm -f "$tmp"
+			if curl -fL --connect-timeout 20 --speed-limit 10240 --speed-time 60 --max-time 240 \
+				-o "$tmp" "https://github.com/${repo}/releases/download/${ver}/${urlfile}"; then
+				if [ -z "$hash" ] || [ "$hash" = "skip" ] || [ "$(sha256sum "$tmp" 2>/dev/null | cut -d' ' -f1)" = "$hash" ]; then
+					mv "$tmp" "$dl/$file"
+					ok=1
+					break
+				fi
+				echo ">> 预下载哈希不符（第 ${attempt} 次）: $file"
+			else
+				echo ">> 预下载失败（第 ${attempt} 次）: $file"
+			fi
+			sleep 5
+		done
+		rm -f "$tmp"
+		if [ -z "$ok" ]; then
+			echo ">> 预下载最终失败: $file（https://github.com/${repo}/releases/download/${ver}/${urlfile}）"
+			echo ">> 立即终止构建，避免编译期 download.pl 无声卡满 6 小时；网络恢复后重跑即可。"
+			exit 1
+		fi
+		echo ">> 已预下载: $file"
+	done
+	return 0
+}
+
 # naiveproxy：tag 形如 v154.0.8037.49-5，版本与 PKG_RELEASE 联动
 bump_naiveproxy() {
 	local mk="$PACKAGE_DIR/naiveproxy/Makefile" tag="" body="" rel="" old=""
@@ -532,6 +591,10 @@ bump_latest "./feeds/packages/net/openlist/Makefile" OpenListTeam/OpenList
 # pattern autocomplete / markdown.md.gotmpl: no matching files found），
 # 故 Docker 暂随 feed 版本（29.6.1 全家桶）。函数保留，待适配后再启用。
 # bump_docker_stack
+
+# v2ray-geodata 的 geoip.dat / geosite.dat 预下载进 dl/（须在 bump_geodata
+# 之后执行，读到的才是最终版本/哈希；失败会立即终止构建，见函数注释）
+predownload_geodata
 
 echo "=================================================="
 echo ">> 全部插件源码安装完成"
