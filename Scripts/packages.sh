@@ -432,6 +432,70 @@ predownload_geodata() {
 	return 0
 }
 
+# 1Panel 烤入固件：iStore 应用 app-meta-istorepanel 本体是 4 个架构无关
+# ipk（元数据包 + luci-app-istorepanel 界面包 + 中文包 + docker-deps 空包），
+# 依赖除 zoneinfo-asia（Config/X86.txt 已编入固件）外都已在固件内。它原本
+# 只能经 iStore 在线安装，刷机不保留、每次升级固件都要重装（2026-11-07
+# 用户要求免重装）。故构建时按 iStore 官方 feed 索引下载 ipk 并校验
+# sha256，放进构建目录 files/ overlay（固件内 /usr/share/istorepanel-offline），
+# 首启由 Files/etc/uci-defaults/99-install-istorepanel 本地 opkg 安装，
+# 全程不依赖在线 opkg 源（2026-11-03 曾被腾讯系统源故障卡住装不上）。
+# 与 predownload_geodata 不同，本功能彻底失败时只跳过并清掉残包（首启
+# 脚本见目录不存在即无操作），不终止构建——可选应用不该拖垮整轮固件。
+bake_istorepanel() {
+	local out="files/usr/share/istorepanel-offline" dl="./dl"
+	local meta_base="https://istore.istoreos.com/repo/all/meta"
+	local luci_base="https://istore.istoreos.com/repo/all/nas_luci"
+	local feed="" pkg="" base="" idx="" fh="" fname="" fhash="" got="" attempt=""
+	mkdir -p "$dl"
+	rm -rf "$out"
+	mkdir -p "$out"
+	for feed in meta luci; do
+		[ "$feed" = "meta" ] && base="$meta_base" || base="$luci_base"
+		if ! curl -fsSL --connect-timeout 20 --max-time 120 \
+			-o "$dl/.istorepanel-$feed.gz" "$base/Packages.gz"; then
+			echo ">> 1Panel 烤入跳过（$feed 索引下载失败）"
+			rm -rf "$out"
+			return 0
+		fi
+	done
+	for feed in "meta app-meta-istorepanel" "meta docker-deps" \
+		"luci luci-app-istorepanel" "luci luci-i18n-istorepanel-zh-cn"; do
+		pkg="${feed##* }"
+		feed="${feed%% *}"
+		[ "$feed" = "meta" ] && base="$meta_base" || base="$luci_base"
+		idx="$dl/.istorepanel-$feed.gz"
+		fh=$(zcat "$idx" | awk -v p="$pkg" 'BEGIN{RS="";FS="\n"} $1=="Package: " p {f="";h="";for(i=2;i<=NF;i++){if($i~/^Filename: /){sub(/^Filename: /,"",$i);f=$i}if($i~/^SHA256sum: /){sub(/^SHA256sum: /,"",$i);h=$i}}print f" "h}' | head -1)
+		fname="${fh%% *}"
+		fhash="${fh##* }"
+		if [ -z "$fname" ] || [ -z "$fhash" ] || [ "$fname" = "$fhash" ]; then
+			echo ">> 1Panel 烤入跳过（索引中找不到 $pkg）"
+			rm -rf "$out"
+			return 0
+		fi
+		got=""
+		for attempt in 1 2 3; do
+			rm -f "$out/$fname"
+			if curl -fsSL --connect-timeout 20 --max-time 120 \
+				-o "$out/$fname" "$base/$fname" \
+				&& [ "$(sha256sum "$out/$fname" 2>/dev/null | cut -d' ' -f1)" = "$fhash" ]; then
+				got=1
+				break
+			fi
+			echo ">> 1Panel ipk 下载/校验失败（第 ${attempt} 次）: $pkg"
+			sleep 5
+		done
+		if [ -z "$got" ]; then
+			echo ">> 1Panel 烤入跳过（$pkg 三次均失败）"
+			rm -rf "$out"
+			return 0
+		fi
+		echo ">> 已烤入 1Panel 离线包: $fname"
+	done
+	rm -f "$dl/.istorepanel-meta.gz" "$dl/.istorepanel-luci.gz"
+	return 0
+}
+
 # naiveproxy：tag 形如 v154.0.8037.49-5，版本与 PKG_RELEASE 联动
 bump_naiveproxy() {
 	local mk="$PACKAGE_DIR/naiveproxy/Makefile" tag="" body="" rel="" old=""
@@ -595,6 +659,9 @@ bump_latest "./feeds/packages/net/openlist/Makefile" OpenListTeam/OpenList
 # v2ray-geodata 的 geoip.dat / geosite.dat 预下载进 dl/（须在 bump_geodata
 # 之后执行，读到的才是最终版本/哈希；失败会立即终止构建，见函数注释）
 predownload_geodata
+
+# 1Panel（iStore 应用）离线 ipk 烤入 files/ overlay（首启本地安装，见函数注释）
+bake_istorepanel
 
 echo "=================================================="
 echo ">> 全部插件源码安装完成"

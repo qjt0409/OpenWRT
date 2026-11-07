@@ -65,8 +65,11 @@ CONFIG_PACKAGE_appfilter=y
 CONFIG_PACKAGE_kmod-oaf=y
 
 # ===================== 应用商店（iStore） =====================
-# 1Panel 等应用可在 iStore 商店内一键安装
 CONFIG_PACKAGE_luci-app-store=y
+# 1Panel 随固件烤入（构建时 Scripts/packages.sh 下载其 iStore 离线 ipk、首启
+# 本地安装，刷机后不用再去商店重装）；zoneinfo-asia 是其界面包
+# luci-app-istorepanel 在固件内唯一的缺失依赖，其余依赖均已编入
+CONFIG_PACKAGE_zoneinfo-asia=y
 
 # ===================== 流量统计 =====================
 CONFIG_PACKAGE_luci-app-statistics=y

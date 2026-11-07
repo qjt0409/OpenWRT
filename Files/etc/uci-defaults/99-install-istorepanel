@@ -1,0 +1,21 @@
+#!/bin/sh
+# 首次开机离线安装随固件烤入的 1Panel（iStore 应用 app-meta-istorepanel）。
+# ipk 在 /usr/share/istorepanel-offline（构建时由 Scripts/packages.sh 的
+# bake_istorepanel 按 iStore 官方 feed 索引下载并校验 sha256），本地 opkg
+# 安装、不走在线软件源。uci-defaults 机制：退出码 0 才删除本脚本，故成功
+# 后自动清理、失败则保留到下次开机重试。
+DIR=/usr/share/istorepanel-offline
+[ -d "$DIR" ] || exit 0
+ls "$DIR"/*.ipk >/dev/null 2>&1 || exit 0
+
+# 刷机保留下来的用户配置优先于包内默认（默认端口 10086、config_path 为空）：
+# 先备份，装完无条件还原
+[ -f /etc/config/istorepanel ] && cp /etc/config/istorepanel /tmp/istorepanel.config.bak
+
+opkg install "$DIR"/*.ipk
+RC=$?
+
+[ -f /tmp/istorepanel.config.bak ] && cp /tmp/istorepanel.config.bak /etc/config/istorepanel
+
+[ "$RC" = "0" ] && rm -rf "$DIR"
+exit $RC
