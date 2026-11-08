@@ -193,6 +193,14 @@ echo ">> 已用 gdy666 官方版 lucky（版本构建时自动追新），并移
 # IP 限速（x86 专用）
 clone_pkg luci-app-eqosplus sirpdboy/luci-app-eqosplus main
 rm -rf ./package/feeds/luci/applications/luci-app-eqosplus ./feeds/luci/applications/luci-app-eqosplus
+# 按 IP 分流量统计 BandwidthD（2026-11-08 用户要求加入）：界面包用作者
+# AlexZhuo 官方仓库（单包仓库、根目录即包目录，同 luci-theme-argon 接法；
+# bleachwrt 等第三方固件内置的就是这个包）；守护包 bandwidthd 2.0.1-35
+# 在 packages feed 内（依赖 libgd/libpcap1 由构建自动拉），只在
+# Config/X86.txt 启用，不在此克隆。luci feed 无同名界面包，无需删同名源。
+# 上游默认子网 192.168.1.0/24 与本机 LAN 不符，默认配置改经
+# Files/etc/config/bandwidthd 注入为 10.0.1.0/24。
+clone_pkg luci-app-bandwidthd AlexZhuo/luci-app-bandwidthd master
 
 # ---------- 文件列表：Alist（已按用户要求移除，不编译） ----------
 

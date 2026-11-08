@@ -25,7 +25,7 @@
 | 容器 | **Docker**（dockerd + docker-compose 29.6.1），**独立顶级菜单**（Docker 管理，非"Docker CE"样式） |
 | 行为管理 | OAF（OpenAppFilter 上游 v7）应用过滤 |
 | 应用商店 | **iStore 商店**（中文界面，1Panel 等可在商店内一键安装） |
-| 流量统计 | luci-app-statistics（collectd） |
+| 流量统计 | luci-app-statistics（collectd）、BandwidthD 按 IP 流量统计（守护包走 packages feed，界面包为作者 AlexZhuo 仓库） |
 | 网络加速 | TurboACC（Flow Offload），**BBR 由内核直接启用并设为默认拥塞算法** |
 | 主题 | Argon + Argon 主题设置 |
 

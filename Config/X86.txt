@@ -42,6 +42,11 @@ CONFIG_PACKAGE_luci-app-commands=y
 CONFIG_PACKAGE_luci-app-watchcat=y
 # IP 限速（lede feed 自带 eqos 依赖高通 NSS 驱动，x86 不可用，改用 eqosplus）
 CONFIG_PACKAGE_luci-app-eqosplus=y
+# 按 IP 分流量统计 BandwidthD：守护包走 packages feed（2.0.1-35），界面包
+# 由 packages.sh 克隆作者 AlexZhuo 仓库；默认子网经 Files/etc/config/
+# bandwidthd 注入为 10.0.1.0/24（上游默认 192.168.1.0/24）
+CONFIG_PACKAGE_bandwidthd=y
+CONFIG_PACKAGE_luci-app-bandwidthd=y
 
 # ===================== 文件与存储 =====================
 # 易有云 / OpenList / 网络共享(Samba4) / 磁盘管理（alist 已按要求移除）
