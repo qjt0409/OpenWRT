@@ -201,6 +201,19 @@ rm -rf ./package/feeds/luci/applications/luci-app-eqosplus ./feeds/luci/applicat
 # 上游默认子网 192.168.1.0/24 与本机 LAN 不符，默认配置改经
 # Files/etc/config/bandwidthd 注入为 10.0.1.0/24。
 clone_pkg luci-app-bandwidthd AlexZhuo/luci-app-bandwidthd master
+# 数据持久化（2026-11-08 用户要求：固定位置、重启不清零、保留 13 个月）：
+# feed 的 init 把数据目录写死在 /tmp/bandwidthd（tmpfs，重启全丢），改到
+# 数据盘 /mnt/sdb2/tongji（init 内共 3 处引用：建目录/拷图、/htdocs 与
+# /www/bandwidthd 两条软链，一并替换）。落盘与恢复靠 Files 配置里开启的
+# output_cdf/recover_cdf；每晚 HUP 轮转与 13 个月超期清理见
+# Files/etc/crontabs/root 与 Files/etc/bandwidthd-prune.sh。
+sed -i 's|/tmp/bandwidthd|/mnt/sdb2/tongji|g' ./feeds/packages/utils/bandwidthd/files/bandwidthd.init
+if grep -q "/mnt/sdb2/tongji" ./feeds/packages/utils/bandwidthd/files/bandwidthd.init \
+	&& ! grep -q "/tmp/bandwidthd" ./feeds/packages/utils/bandwidthd/files/bandwidthd.init; then
+	echo ">> bandwidthd 数据目录已改为 /mnt/sdb2/tongji（持久化）"
+else
+	echo "!! 警告：bandwidthd init 数据目录替换未完全命中，统计数据仍会落在 /tmp（重启丢失）"
+fi
 
 # ---------- 文件列表：Alist（已按用户要求移除，不编译） ----------
 

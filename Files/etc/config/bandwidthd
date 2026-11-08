@@ -4,8 +4,8 @@ config bandwidthd
 	option skip_intervals	0
 	option graph_cutoff	1024
 	option promiscuous	true
-	option output_cdf	false
-	option recover_cdf	false
+	option output_cdf	true
+	option recover_cdf	true
 	option filter		ip
 	option graph		true
 	option meta_refresh	150

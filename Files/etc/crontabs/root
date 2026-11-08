@@ -1,0 +1,5 @@
+# bandwidthd 日志轮转：每晚给守护进程发 HUP，触发其 CDF 分层轮转（上游
+# 官方要求的动作，OpenWrt 的 init 没带；不轮转则 log.*.0.cdf 无限增长）
+0 0 * * * killall -HUP bandwidthd 2>/dev/null
+# bandwidthd 超期清理：每周一 03:30 删除 13 个月（395 天）以前的数据行
+30 3 * * 1 sh /etc/bandwidthd-prune.sh
