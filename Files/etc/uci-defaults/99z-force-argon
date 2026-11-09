@@ -1,0 +1,11 @@
+#!/bin/sh
+# 把 LuCI 默认主题钉死为 Argon（用户 2026-11-09 要求只用 Argon）：
+# 固件还装有 bootstrap（luci-light 集合硬依赖）与 design（其它组件带入），
+# 两者各带首启脚本抢设 luci.main.mediaurlbase，全新配置时 design 最后
+# 执行会把默认抢走。本脚本编号 99z、在全部 uci-defaults 最后执行，
+# 无条件改回 Argon；也兜底「保留配置里还写着已被移除主题」的升级场景，
+# 避免界面指向不存在的主题。执行成功后本脚本自删，只跑一次。
+uci get luci.themes.Argon >/dev/null 2>&1 || uci set luci.themes.Argon=/luci-static/argon
+uci set luci.main.mediaurlbase=/luci-static/argon
+uci commit luci
+exit 0

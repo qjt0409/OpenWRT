@@ -128,6 +128,20 @@ clone_pkg luci-app-argon-config jerrykuku/luci-app-argon-config master
 # 应用本体由构建系统的 OVERRIDE 机制自动用克隆版覆盖 feed 版（发布 .config 的
 # CONFIG_OVERRIDE_PKGS 已含 luci-app-argon-config / luci-theme-argon）。
 # 此前一版曾加过删除 feed 的两行，会导致主题设置页失去中文，已撤销。
+# 只保留 Argon 的兜底（2026-11-09）：design 主题不在 Config 配置内、由其它
+# 组件带入，其首启脚本 30_luci-theme-design 会在配置里没登记过它时把默认
+# 主题抢成 design（全新配置首启即中招，2026-11-09 用户实机遇到）。这里摘
+# 掉该脚本抢默认的一行（主题登记行保留）；默认主题另由
+# Files/etc/uci-defaults/99z-force-argon 在首启最后钉死为 Argon。
+DESIGN_DEF=./feeds/luci/themes/luci-theme-design/root/etc/uci-defaults/30_luci-theme-design
+if [ -f "$DESIGN_DEF" ]; then
+	sed -i '/set luci\.main\.mediaurlbase=\/luci-static\/design/d' "$DESIGN_DEF"
+	if grep -q "mediaurlbase=/luci-static/design" "$DESIGN_DEF"; then
+		echo "!! 警告：design 首启脚本的抢默认行未摘除干净"
+	else
+		echo ">> design 主题首启抢默认已摘除（默认主题钉死 Argon）"
+	fi
+fi
 
 # ---------- 消息推送 ----------
 # 全能推送

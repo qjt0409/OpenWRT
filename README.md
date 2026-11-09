@@ -27,7 +27,7 @@
 | 应用商店 | **iStore 商店**（中文界面，1Panel 等可在商店内一键安装） |
 | 流量统计 | luci-app-statistics（collectd）、BandwidthD 按 IP 流量统计（守护包走 packages feed，界面包为作者 AlexZhuo 仓库；数据持久化于 /mnt/sdb2/tongji，重启不丢失，保留 13 个月自动清理） |
 | 网络加速 | TurboACC（Flow Offload），**BBR 由内核直接启用并设为默认拥塞算法** |
-| 主题 | Argon + Argon 主题设置 |
+| 主题 | Argon + Argon 主题设置（默认主题钉死 Argon；design/bootstrap 显式关闭，design 首启抢默认另在构建时摘除） |
 
 **顶级菜单顺序**：状态 → 系统 → iStore → Docker → 服务 → 网络存储 → Control → 网络 → 统计 → 退出
 
