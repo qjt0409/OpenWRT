@@ -5,7 +5,7 @@ name: OpenWrt-Cleanup
 
 on:
   schedule:
-    - cron: '30 20 * * 0'
+    - cron: '30 19 2 * *'
   workflow_dispatch:
 
 permissions:
