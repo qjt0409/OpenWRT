@@ -228,6 +228,18 @@ if grep -q "/mnt/sdb2/tongji" ./feeds/packages/utils/bandwidthd/files/bandwidthd
 else
 	echo "!! 警告：bandwidthd init 数据目录替换未完全命中，统计数据仍会落在 /tmp（重启丢失）"
 fi
+# 工作目录补丁（2026-11-09 实机定位）：守护进程写图走 ./htdocs/ 前缀（靠
+# /htdocs 软链进数据目录），但写 CDF 用无前缀相对文件名、按进程工作目录
+# 落盘；procd 的工作目录是 /，CDF 会掉进根目录（刷机即失、清理脚本也够
+# 不着，实机 find 已证）。给启动命令包一层：先 cd 进数据目录再 exec，
+# 并建 htdocs 自链接保住画图路径（图仍经 ./htdocs/ 落回数据目录）。
+# 实机同补丁验证通过：进程 cwd 为 /mnt/sdb2/tongji、CDF 在目录内持续增长。
+sed -i 's#procd_set_param command /usr/sbin/bandwidthd#procd_set_param command /bin/sh -c "cd /mnt/sdb2/tongji || exit 1; [ -e htdocs ] || ln -s . htdocs; exec /usr/sbin/bandwidthd"#' ./feeds/packages/utils/bandwidthd/files/bandwidthd.init
+if grep -q 'cd /mnt/sdb2/tongji' ./feeds/packages/utils/bandwidthd/files/bandwidthd.init; then
+	echo ">> bandwidthd 启动工作目录已钉到 /mnt/sdb2/tongji（CDF 落盘位置修正）"
+else
+	echo "!! 警告：bandwidthd 启动命令包装未命中，CDF 仍会落到根目录"
+fi
 
 # ---------- 文件列表：Alist（已按用户要求移除，不编译） ----------
 
