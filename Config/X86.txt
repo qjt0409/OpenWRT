@@ -53,6 +53,10 @@ CONFIG_PACKAGE_luci-app-eqosplus=y
 # bandwidthd 注入为 10.0.1.0/24（上游默认 192.168.1.0/24）
 CONFIG_PACKAGE_bandwidthd=y
 CONFIG_PACKAGE_luci-app-bandwidthd=y
+# WAN 每日/每月总流量统计 wanstats：独立包 luci-app-wanstats，由
+# packages.sh 从自有仓库 qjt0409/luci-app-bandwidthd 提取子目录；
+# 默认数据目录经 Files/etc/config/wanstats 注入为 /mnt/sdb2/tongji-wan
+CONFIG_PACKAGE_luci-app-wanstats=y
 
 # ===================== 文件与存储 =====================
 # 易有云 / OpenList / 网络共享(Samba4) / 磁盘管理（alist 已按要求移除）

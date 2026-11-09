@@ -1,0 +1,7 @@
+config wanstats 'settings'
+	option enabled '1'
+	option selection 'auto'
+	option interface 'wan'
+	option data_dir '/mnt/sdb2/tongji-wan'
+	option interval '60'
+	option retention_months '13'

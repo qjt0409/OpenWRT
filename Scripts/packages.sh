@@ -240,6 +240,17 @@ if grep -q 'cd /mnt/sdb2/tongji' ./feeds/packages/utils/bandwidthd/files/bandwid
 else
 	echo "!! 警告：bandwidthd 启动命令包装未命中，CDF 仍会落到根目录"
 fi
+# WAN 每日/每月总流量统计 wanstats（2026-11-09 用户要求，与上面原版
+# luci-app-bandwidthd 并存、互不依赖）：独立子包 luci-app-wanstats 在
+# 自有仓库 qjt0409/luci-app-bandwidthd 的子目录里，照 ddns-go 的接法
+# 克隆整仓后只提取子包、删源目录（整仓根目录是含 bandwidthd 配置页
+# 的整包 luci-app-bandwidthd 2.1.0，与原版同名，不能进 package 树）。
+# 按 Padavan rstats 方式统计 WAN 口每日/每月总量，统计接口可选
+# （默认 auto 跟随 wan）；默认数据目录经 Files/etc/config/wanstats
+# 注入为 /mnt/sdb2/tongji-wan，保存 13 个月、超期自动删除。
+clone_pkg luci-app-bandwidthd-src qjt0409/luci-app-bandwidthd main
+extract_dir "$PACKAGE_DIR/luci-app-bandwidthd-src/luci-app-wanstats" luci-app-wanstats
+rm -rf "$PACKAGE_DIR/luci-app-bandwidthd-src"
 
 # ---------- 文件列表：Alist（已按用户要求移除，不编译） ----------
 
