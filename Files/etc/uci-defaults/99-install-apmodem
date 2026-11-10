@@ -1,0 +1,21 @@
+#!/bin/sh
+# 首次开机离线安装随固件烤入的「访问AP/光猫」（iStore 应用 app-meta-ap-modem）。
+# ipk 在 /usr/share/apmodem-offline（构建时由 Scripts/packages.sh 的
+# bake_apmodem 按 iStore 官方 feed 索引下载并校验 sha256），本地 opkg
+# 安装、不走在线软件源。uci-defaults 机制：退出码 0 才删除本脚本，故成功
+# 后自动清理、失败则保留到下次开机重试。
+DIR=/usr/share/apmodem-offline
+[ -d "$DIR" ] || exit 0
+ls "$DIR"/*.ipk >/dev/null 2>&1 || exit 0
+
+# 刷机保留下来的用户配置优先于包内默认（默认 enabled '0'、无目标地址）：
+# 先备份，装完无条件还原
+[ -f /etc/config/ap_modem ] && cp /etc/config/ap_modem /tmp/ap_modem.config.bak
+
+opkg install "$DIR"/*.ipk
+RC=$?
+
+[ -f /tmp/ap_modem.config.bak ] && cp /tmp/ap_modem.config.bak /etc/config/ap_modem
+
+[ "$RC" = "0" ] && rm -rf "$DIR"
+exit $RC

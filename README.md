@@ -74,6 +74,7 @@
 - **清理**：Actions → **OpenWrt-Cleanup** → Run workflow，清理历史 Releases 与构建缓存（每周一自动执行）。
 - **加快二次编译**：构建缓存（ccache + 工具链）自动保存/恢复，同源码提交的二次编译显著加快；缓存超限时自动轮换清理。
 - **1Panel 安装**：刷机后进入「iStore 应用商店」→ 搜索 1Panel → 一键安装（固件已内置 Docker）。
+- **访问AP/光猫**：已随固件烤入（iStore 应用 app-meta-ap-modem），刷机后首启自动离线安装，入口在「网络」菜单下；无需再经 iStore 在线安装。
 - **升级固件**：在「系统 → 备份/升级」上传 `squashfs-combined.img.gz` 并勾选保留配置；lucky 配置存于 `/etc/config/lucky`（已列为 conffiles，升级保留）。
 
 ## 自定义

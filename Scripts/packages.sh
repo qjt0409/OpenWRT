@@ -554,6 +554,68 @@ bake_istorepanel() {
 	return 0
 }
 
+# 访问AP/光猫烤入固件（2026-11-10 用户要求，与 1Panel 同法）：iStore 应用
+# app-meta-ap-modem 全套 4 个 ipk 均为架构无关（元数据包 + luci-app-ap-modem
+# 界面包 + 中文包 + luci-js-deps 空包，合计约 21KB），其余依赖只有 libc 与
+# luci-base、均已在固件内，无需改 Config。在线安装要先拉系统源索引、屡被
+# 源故障卡住，故同 bake_istorepanel：构建时按 iStore 官方 feed 索引下载
+# ipk 并校验 sha256，放进 files/ overlay（固件内 /usr/share/apmodem-offline），
+# 首启由 Files/etc/uci-defaults/99-install-apmodem 本地 opkg 安装；失败只
+# 跳过并清掉残包，不终止构建。
+bake_apmodem() {
+	local out="files/usr/share/apmodem-offline" dl="./dl"
+	local meta_base="https://istore.istoreos.com/repo/all/meta"
+	local luci_base="https://istore.istoreos.com/repo/all/nas_luci"
+	local feed="" pkg="" base="" idx="" fh="" fname="" fhash="" got="" attempt=""
+	mkdir -p "$dl"
+	rm -rf "$out"
+	mkdir -p "$out"
+	for feed in meta luci; do
+		[ "$feed" = "meta" ] && base="$meta_base" || base="$luci_base"
+		if ! curl -fsSL --connect-timeout 20 --max-time 120 \
+			-o "$dl/.apmodem-$feed.gz" "$base/Packages.gz"; then
+			echo ">> AP/光猫烤入跳过（$feed 索引下载失败）"
+			rm -rf "$out"
+			return 0
+		fi
+	done
+	for feed in "meta app-meta-ap-modem" "meta luci-js-deps" \
+		"luci luci-app-ap-modem" "luci luci-i18n-ap-modem-zh-cn"; do
+		pkg="${feed##* }"
+		feed="${feed%% *}"
+		[ "$feed" = "meta" ] && base="$meta_base" || base="$luci_base"
+		idx="$dl/.apmodem-$feed.gz"
+		fh=$(zcat "$idx" | awk -v p="$pkg" 'BEGIN{RS="";FS="\n"} $1=="Package: " p {f="";h="";for(i=2;i<=NF;i++){if($i~/^Filename: /){sub(/^Filename: /,"",$i);f=$i}if($i~/^SHA256sum: /){sub(/^SHA256sum: /,"",$i);h=$i}}print f" "h}' | head -1)
+		fname="${fh%% *}"
+		fhash="${fh##* }"
+		if [ -z "$fname" ] || [ -z "$fhash" ] || [ "$fname" = "$fhash" ]; then
+			echo ">> AP/光猫烤入跳过（索引中找不到 $pkg）"
+			rm -rf "$out"
+			return 0
+		fi
+		got=""
+		for attempt in 1 2 3; do
+			rm -f "$out/$fname"
+			if curl -fsSL --connect-timeout 20 --max-time 120 \
+				-o "$out/$fname" "$base/$fname" \
+				&& [ "$(sha256sum "$out/$fname" 2>/dev/null | cut -d' ' -f1)" = "$fhash" ]; then
+				got=1
+				break
+			fi
+			echo ">> AP/光猫 ipk 下载/校验失败（第 ${attempt} 次）: $pkg"
+			sleep 5
+		done
+		if [ -z "$got" ]; then
+			echo ">> AP/光猫烤入跳过（$pkg 三次均失败）"
+			rm -rf "$out"
+			return 0
+		fi
+		echo ">> 已烤入 AP/光猫离线包: $fname"
+	done
+	rm -f "$dl/.apmodem-meta.gz" "$dl/.apmodem-luci.gz"
+	return 0
+}
+
 # naiveproxy：tag 形如 v154.0.8037.49-5，版本与 PKG_RELEASE 联动
 bump_naiveproxy() {
 	local mk="$PACKAGE_DIR/naiveproxy/Makefile" tag="" body="" rel="" old=""
@@ -720,6 +782,9 @@ predownload_geodata
 
 # 1Panel（iStore 应用）离线 ipk 烤入 files/ overlay（首启本地安装，见函数注释）
 bake_istorepanel
+
+# 访问AP/光猫（iStore 应用 app-meta-ap-modem）离线 ipk 烤入 files/ overlay
+bake_apmodem
 
 echo "=================================================="
 echo ">> 全部插件源码安装完成"
