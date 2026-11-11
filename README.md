@@ -4,6 +4,25 @@
 
 > 说明：lede 没有「24.10.3」这个版本号（24.10.3 是 OpenWrt 官方版本号）。lede master 基于 OpenWrt 25.12 主线、x86 内核 6.18，功能与稳定性均优于旧版 lede 分支，因此本项目采用 lede master。
 
+---
+
+## 📱 配套手机 App：MyWrtHub（强烈推荐）
+
+> **本固件的专属手机管理 App** —— 仓库：**[qjt0409/MyWrtHub](https://github.com/qjt0409/MyWrtHub)**
+>
+> 📥 **下载**：[Releases](https://github.com/qjt0409/MyWrtHub/releases) ｜ [Actions 构建产物](https://github.com/qjt0409/MyWrtHub/actions)（安装包在每次构建的 Artifacts 里）
+>
+> 📱 **平台**：Android 原生应用 ｜ 🔗 **连接方式**：LuCI ubus JSON-RPC，路由器上不用装任何额外组件
+
+**为这套固件量身打通的功能：**
+
+- **WAN 流量统计**：对接固件内置的 luci-app-wanstats，总览直接看今日 / 本月 WAN 总流量，与 LuCI 页面同源同数
+- **PassWall / PassWall2**：组件状态监测（TCP / UDP / DNS / HAPROXY）、节点按订阅分组切换、订阅管理与一键更新、快捷模式（GFW / 白名单 / 全局 / 回国）、国内外网络与 IP 检测，与网页版同源
+- **OpenAppFilter**：应用过滤规则与上网记录，对接固件的 appfilter v7
+- **终端管理**：实时速率、今日流量、常用 App、上网黑名单、设备限速（对接 eqosplus）
+- 还有总览（CPU / 内存 / 连接数 / 网速 / 延迟）、在线设备、OpenClash、防火墙、网络接口、日志、软件包、定时任务、网络唤醒等
+
+
 ## 登录信息
 
 | 项目 | 值 |
