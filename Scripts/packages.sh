@@ -36,6 +36,25 @@ rm -rf ./staging_dir/hostpkg/lib/ruby ./staging_dir/hostpkg/lib/libruby* \
 rm -f ./staging_dir/hostpkg/lib/pkgconfig/ruby*.pc
 echo ">> 已清除缓存中的 host ruby（避免 BASERUBY 加载 optparse 失败）"
 
+# ---------- 清除构建缓存恢复出的 tools/gnulib ----------
+# 缓存（staging_dir/host*）会把旧版 gnulib 工具树一并恢复，而缓存恢复后
+# stamp 时间戳被统一刷新，make 误判 tools/gnulib 已是最新、从不按当前
+# lede 源码重编。2026-11-13 lede 把 tools/gnulib 换回 stable-202507
+# （2026.07.04~b22f5a30）后，缓存里 2024 年的 stable-202401 旧树一直被
+# 一轮轮带到今天；2026-11-17 lede 又把 gettext-full 升到 0.24.2 对齐新
+# gnulib，其自带 gnulib-local/lib/exitfail.h.diff 只认新版 exitfail.h，
+# 打旧版必失败（1 out of 1 hunk FAILED），gettext-full [host] 死在
+# prepare 步，当日 3 次 attempt 同签名全灭。本地已验证：该 diff 打新版
+# exitfail.h 干净通过、打旧版复现同一 FAILED。故同 ruby 的处理：编译前
+# 删掉缓存中的 gnulib 工具本体与 stamp，强制本轮按当前 lede 源码重编
+# （只是拷贝脚本树，几十秒）；本步在缓存恢复之后、编译开始之前运行，
+# 时机正好。
+rm -f ./staging_dir/host/bin/gnulib-tool
+rm -rf ./staging_dir/host/share/gnulib
+rm -f ./staging_dir/host/share/aclocal/gl_*.m4
+rm -f ./staging_dir/host/stamp/.gnulib_*
+echo ">> 已清除缓存中的 gnulib 工具（强制按当前 lede 源码重编）"
+
 # 克隆完整仓库到 ./package/<name>，自动清理旧目录
 clone_pkg() {
 	local name="$1" repo="$2" branch="$3"
