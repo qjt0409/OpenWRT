@@ -36,24 +36,70 @@ rm -rf ./staging_dir/hostpkg/lib/ruby ./staging_dir/hostpkg/lib/libruby* \
 rm -f ./staging_dir/hostpkg/lib/pkgconfig/ruby*.pc
 echo ">> 已清除缓存中的 host ruby（避免 BASERUBY 加载 optparse 失败）"
 
-# ---------- 清除构建缓存恢复出的 tools/gnulib ----------
-# 缓存（staging_dir/host*）会把旧版 gnulib 工具树一并恢复，而缓存恢复后
-# stamp 时间戳被统一刷新，make 误判 tools/gnulib 已是最新、从不按当前
-# lede 源码重编。2026-11-13 lede 把 tools/gnulib 换回 stable-202507
-# （2026.07.04~b22f5a30）后，缓存里 2024 年的 stable-202401 旧树一直被
-# 一轮轮带到今天；2026-11-17 lede 又把 gettext-full 升到 0.24.2 对齐新
-# gnulib，其自带 gnulib-local/lib/exitfail.h.diff 只认新版 exitfail.h，
-# 打旧版必失败（1 out of 1 hunk FAILED），gettext-full [host] 死在
-# prepare 步，当日 3 次 attempt 同签名全灭。本地已验证：该 diff 打新版
-# exitfail.h 干净通过、打旧版复现同一 FAILED。故同 ruby 的处理：编译前
-# 删掉缓存中的 gnulib 工具本体与 stamp，强制本轮按当前 lede 源码重编
-# （只是拷贝脚本树，几十秒）；本步在缓存恢复之后、编译开始之前运行，
-# 时机正好。
-rm -f ./staging_dir/host/bin/gnulib-tool
-rm -rf ./staging_dir/host/share/gnulib
-rm -f ./staging_dir/host/share/aclocal/gl_*.m4
-rm -f ./staging_dir/host/stamp/.gnulib_*
-echo ">> 已清除缓存中的 gnulib 工具（强制按当前 lede 源码重编）"
+# ---------- 按 lede 锁定版本重装缓存中的 tools/gnulib ----------
+# 缓存（staging_dir/host*）会把旧版 gnulib 工具树一并恢复，而 tools 的
+# 总 stamp（staging_dir/host/stamp/.tools_compile_*）在缓存恢复后被统一
+# touch，timestamp.pl 判定已最新，make 从不按当前 lede 源码重编 tools。
+# 2026-11-13 lede 把 tools/gnulib 换回 stable-202507（2026.07.04~b22f5a30）
+# 后，缓存里 2024 年 stable-202401 旧树一直被一轮轮带下来；2026-11-17
+# lede 又把 gettext-full 升 0.24.2 对齐新 gnulib，其自带
+# gnulib-local/lib/exitfail.h.diff 只认新版 exitfail.h、打旧版必 FAILED，
+# #131 三次 attempt 同签名全灭（本地 dry-run 复现：打新版通过、打旧版
+# FAILED）。2026-11-17 的第一版修复只删 staging 里的 gnulib 树和
+# .gnulib_* stamp，但 tools 根本没有单包 stamp（只有总 stamp），树删了
+# 却没人重编，#132 改死在「GNULIB_SRCDIR is set but does not point to
+# an existing directory」——删而不装，是第一版的错。
+# 本版改为照 lede tools/gnulib/Makefile 的 Host/Install 原地重装：解析
+# 其 PKG_VERSION 与 PKG_MIRROR_HASH，从 OpenWrt 官方源镜像下载同一源码
+# 包并校验 sha256（与构建系统同源同哈希），整树装进
+# staging_dir/host/share/gnulib、m4 装进 share/aclocal、重建
+# bin/gnulib-tool 软链；版本随 lede 锁定值走，以后换版自动跟上。任一步
+# 失败则退回慢办法：删 tools 总 stamp，让 make 编译阶段整段重编 tools
+# 兜底。本步在缓存恢复之后、编译开始之前运行，时机正好。
+refresh_gnulib() {
+	local mk="./tools/gnulib/Makefile" ver="" hash="" src="" tmp=""
+	ver=$(sed -n 's/^PKG_VERSION:=//p' "$mk" | head -1)
+	hash=$(sed -n 's/^PKG_MIRROR_HASH:=//p' "$mk" | head -1)
+	src="gnulib-${ver}.tar.zst"
+	if [ -z "$ver" ] || [ -z "$hash" ]; then
+		echo ">> gnulib 重装：无法解析 tools/gnulib 版本，改走删 stamp 重编 tools"
+		rm -f ./staging_dir/host/stamp/.tools_compile*
+		return 0
+	fi
+	if [ ! -f "./dl/$src" ]; then
+		curl -fsSL --connect-timeout 20 --max-time 300 \
+			-o "./dl/$src" "https://sources.openwrt.org/$src" \
+			|| curl -fsSL --connect-timeout 20 --max-time 300 \
+				-o "./dl/$src" "https://mirror2.openwrt.org/sources/$src"
+	fi
+	if [ ! -f "./dl/$src" ] \
+		|| [ "$(sha256sum "./dl/$src" 2>/dev/null | cut -d' ' -f1)" != "$hash" ]; then
+		echo ">> gnulib 重装：源码包下载/校验失败，改走删 stamp 重编 tools"
+		rm -f "./dl/$src"
+		rm -f ./staging_dir/host/stamp/.tools_compile*
+		return 0
+	fi
+	tmp="./tmp/.gnulib-refresh"
+	rm -rf "$tmp"
+	mkdir -p "$tmp"
+	if ! tar --zstd -xf "./dl/$src" -C "$tmp" --strip-components 1; then
+		echo ">> gnulib 重装：解包失败，改走删 stamp 重编 tools"
+		rm -rf "$tmp"
+		rm -f ./staging_dir/host/stamp/.tools_compile*
+		return 0
+	fi
+	# 与 lede Host/Uninstall + Host/Install 等价的原地重装
+	rm -rf ./staging_dir/host/share/gnulib ./staging_dir/host/bin/gnulib-tool
+	rm -f ./staging_dir/host/share/aclocal/gl_*.m4
+	mkdir -p ./staging_dir/host/share/aclocal ./staging_dir/host/share/gnulib \
+		./staging_dir/host/bin
+	cp "$tmp"/m4/*.m4 ./staging_dir/host/share/aclocal/
+	cp -r "$tmp"/. ./staging_dir/host/share/gnulib/
+	ln -sf ../share/gnulib/gnulib-tool ./staging_dir/host/bin/gnulib-tool
+	rm -rf "$tmp"
+	echo ">> 已按 lede 锁定版本重装 gnulib 工具（$ver）"
+}
+refresh_gnulib
 
 # 克隆完整仓库到 ./package/<name>，自动清理旧目录
 clone_pkg() {
