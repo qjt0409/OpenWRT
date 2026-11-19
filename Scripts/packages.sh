@@ -70,7 +70,8 @@ refresh_gnulib() {
 		curl -fsSL --connect-timeout 20 --max-time 300 \
 			-o "./dl/$src" "https://sources.openwrt.org/$src" \
 			|| curl -fsSL --connect-timeout 20 --max-time 300 \
-				-o "./dl/$src" "https://mirror2.openwrt.org/sources/$src"
+				-o "./dl/$src" "https://mirror2.openwrt.org/sources/$src" \
+			|| true
 	fi
 	if [ ! -f "./dl/$src" ] \
 		|| [ "$(sha256sum "./dl/$src" 2>/dev/null | cut -d' ' -f1)" != "$hash" ]; then
@@ -93,9 +94,24 @@ refresh_gnulib() {
 	rm -f ./staging_dir/host/share/aclocal/gl_*.m4
 	mkdir -p ./staging_dir/host/share/aclocal ./staging_dir/host/share/gnulib \
 		./staging_dir/host/bin
-	cp "$tmp"/m4/*.m4 ./staging_dir/host/share/aclocal/
-	cp -r "$tmp"/. ./staging_dir/host/share/gnulib/
-	ln -sf ../share/gnulib/gnulib-tool ./staging_dir/host/bin/gnulib-tool
+	cp "$tmp"/m4/*.m4 ./staging_dir/host/share/aclocal/ || {
+		echo ">> gnulib 重装：拷贝 m4 失败，改走删 stamp 重编 tools"
+		rm -rf "$tmp"
+		rm -f ./staging_dir/host/stamp/.tools_compile*
+		return 0
+	}
+	cp -r "$tmp"/. ./staging_dir/host/share/gnulib/ || {
+		echo ">> gnulib 重装：拷贝源码树失败，改走删 stamp 重编 tools"
+		rm -rf "$tmp"
+		rm -f ./staging_dir/host/stamp/.tools_compile*
+		return 0
+	}
+	ln -sf ../share/gnulib/gnulib-tool ./staging_dir/host/bin/gnulib-tool || {
+		echo ">> gnulib 重装：建软链失败，改走删 stamp 重编 tools"
+		rm -rf "$tmp"
+		rm -f ./staging_dir/host/stamp/.tools_compile*
+		return 0
+	}
 	rm -rf "$tmp"
 	echo ">> 已按 lede 锁定版本重装 gnulib 工具（$ver）"
 }
