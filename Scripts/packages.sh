@@ -759,6 +759,20 @@ bump_linkease() {
 		echo ">> 追新跳过（未取到 linkease-runtime 最新版）"
 		return 0
 	fi
+	# 只看 tag 升版有个坑：上游 1.7.7 的 Release 起不再附带
+	# linkease-common-bin 包（只剩 linkease-bin 本体），而 nas-packages 的
+	# Makefile 仍按新版本号拼 common-bin 的文件名去下载，GitHub 与三个
+	# OpenWrt 镜像全 404、构建必死（2026-11-25、11-26 两轮各 3 次 attempt
+	# 同签名全灭）。故升版前先验新版两个资产都真实存在，缺任一整组不升、
+	# 保留旧版（与追新框架「数据不齐整组不动」的原则一致）；上游哪天把
+	# 包补回来，自动恢复追新。
+	for asset in "linkease-bin-${ver}-linux-x86_64.tar.gz" "linkease-common-bin-${ver}-linux-x86_64.tar.gz"; do
+		if ! curl -fsSIL --connect-timeout 20 --max-time 60 -o /dev/null \
+			"https://github.com/istoreos/istoreos-app-hub/releases/download/linkease-runtime-v${ver}/${asset}"; then
+			echo ">> 追新跳过（linkease-runtime $ver 未发布 $asset，整组保留旧版）"
+			return 0
+		fi
+	done
 	for f in "$PACKAGE_DIR/linkease/Makefile" "$PACKAGE_DIR/linkease-common-bin/Makefile"; do
 		[ -f "$f" ] || continue
 		old=$(grep -m1 -oP '^PKG_SOURCE_DATE:=\K.+' "$f" 2>/dev/null || true)
